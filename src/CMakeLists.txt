@@ -1,0 +1,15 @@
+set(source
+	src/camera.cpp
+	src/capture.cpp
+	src/trigger.cpp
+	src/framesetup.cpp
+	#src/frameencoder.cpp
+	#src/framepreview.cpp
+	#src/framedetection.cpp
+	#src/frameproc.cpp
+	#src/frameparams.cpp
+	#src/audioread.cpp
+	#src/processparams.cpp
+	#src/framewriter.cpp
+	PARENT_SCOPE
+)
