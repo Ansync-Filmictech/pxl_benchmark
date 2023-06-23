@@ -60,6 +60,15 @@ PXL_RETURN_CODE Camera::initialize() {
         return rc;
     }
 
+    // Tell the API to use frame buffering while triggered
+    U32  useBufferingCommand[] =
+      { 49,    // 49 == command code for ALLOW_BUFFERED_FRAMES_WITH_TRIGGER
+        1  };  // 1 == TRUE.  Set to 0 to restore the default behavior for PxLGetNextFrame
+
+    rc = PxLPrivateCmd(hCamera, // Handle to the camera, returned via PxLInitializeEx
+      sizeof(useBufferingCommand),
+      useBufferingCommand);
+
     //Set to manual to prevent bad stuff on trigger switch
 
     CAMERA_INFO cameraInfo;
@@ -105,44 +114,7 @@ PXL_RETURN_CODE Camera::initialize() {
     if (!API_SUCCESS(rc)) {
         printf("Error 0x%X!: Unable to set color defaults\n", rc);
     }
-
-    
-    
-/*
-    rc = PxLSetStreamState(hCamera, START_STREAM);
-    if (!API_SUCCESS(rc)) {
-        printf("Error 0x%X!: Unable start camera stream\n", rc);
-        initialized = false;
-        return rc;
-    }
-*/
-
-    U32 flags;
-    U32 numParams = FEATURE_ROI_NUM_PARAMS;
-    float params[FEATURE_ROI_NUM_PARAMS];
-    rc = PxLGetFeature(hCamera, FEATURE_ROI, &flags, &numParams, &params[0]);
-    printf("Left %f Top %f Width %f Height %f %X %X\n", params[0], params[1], params[2], params[3], flags, rc);
   
-    //params[0] = params[2]/24;
-    //params[1] = params[3]/4;
-    params[2] = 1600;
-    params[3] = 1200;
-    //rc = PxLSetFeature(hCamera, FEATURE_ROI, flags, numParams, &params[0]);
-    //printf("Left %f Top %f Width %f Height %f %X %X\n", params[0], params[1], params[2], params[3], flags, rc);
-/*
-    rc = PxLGetFeature(hCamera, FEATURE_MAX_PACKET_SIZE, &flags, &numParams, &params[0]);
-    printf("Packet Size %X %f\n", flags, params[0]);
-    flags = FEATURE_FLAG_MANUAL | FEATURE_FLAG_PRESENCE;
-    rc = PxLSetFeature(hCamera, FEATURE_MAX_PACKET_SIZE, flags, numParams, &params[0]);
-    params[0] = 9000;
-    rc = PxLSetFeature(hCamera, FEATURE_MAX_PACKET_SIZE, flags, numParams, &params[0]);
-    rc = PxLGetFeature(hCamera, FEATURE_MAX_PACKET_SIZE, &flags, &numParams, &params[0]);
-    printf("Packet Size %X %f\n", flags, params[0]);
-    
-    rc = PxLGetFeature(hCamera, FEATURE_BANDWIDTH_LIMIT, &flags, &numParams, &params[0]);
-    printf("Bandwidth Limit %X %f\n", flags, params[0]);
-
-  */  
     rawImageSize = imageSizeInBytes();
     frameBuffer.resize(rawImageSize);
     
@@ -278,84 +250,6 @@ inline float Camera::pixelSize(ULONG pxlFmt) {
             break;
     }
     return retVal;
-}
-
-void *Camera::GetNextFrame() {
-    PXL_RETURN_CODE rc;
-    nextImageState = InProgress;
-    frameDesc.uSize = sizeof(frameDesc);
-
-    rc = ApiUnknownError;
-    UNUSED(rc);
-
-    for (U32 i = 0; i < 5; i++) {
-        rc = PxLGetNextFrame(hCamera, (U32) frameBuffer.size(), &frameBuffer[0], &frameDesc);
-
-        if (triggering) {
-            if (frameDesc.uFrameNumber - previousFrame > 1) {
-                trigMisses++;
-		printf("Camera Dropped Frame\n");
-            }
-
-            previousFrame = frameDesc.uFrameNumber;
-        }
-
-        if (API_SUCCESS(rc)) {
-            nextImageState = Inactive;
-            operationReturn = false;
-            return nullptr;
-        } else {
-            // If the streaming is turned off, or worse yet -- is gone?
-            // If so, no sense in continuing.
-            if (ApiStreamStopped == rc || ApiNoCameraAvailableError == rc) {
-                if (!operationReturn) {
-                    printf("0x%X!: streaming stopped, returning to normal operation\n", rc);
-                    operationReturn = true;
-                }
-                nextImageState = Inactive;
-                return nullptr;
-            } else {
-                printf("Error 0x%X!: Unable to retrieve next frame\n", rc);
-            }
-        }
-        // Must of just hit a bubble in the frame pipeline.
-        // Reset the frame descriptor uSize field (in case the API is newer than
-        // what we were compiled with) and try PxLGetNextFrame again.
-        frameDesc.uSize = sizeof(frameDesc);
-    }
-
-    nextImageState = Inactive;
-    return nullptr;
-}
-
-//----------------------------------------------------------------
-// Name:
-//      initiateGetNextFrame
-//
-// Description:
-//      creates pthread for GetNextFrame to run as background
-//      to run as background process in order to keep gui from
-//      freezing during next frame process
-//
-// Notes:
-//      - will only run if nextImageState is Inactive
-//      - called by main() inside gui window
-//----------------------------------------------------------------
-void Camera::initiateGetNextFrame() {
-    if (nextImageState == Inactive) {
-        pthread_attr_t attr;
-
-        pthread_attr_init(&attr);
-        pthread_attr_setscope(&attr, PTHREAD_SCOPE_SYSTEM);
-        pthread_attr_setdetachstate(&attr, PTHREAD_CREATE_DETACHED);
-
-        int s = pthread_create(&nextImageThread, &attr, &Camera::nextImageHelper, this);
-        if (s != 0) {
-            printf("Error %d: Could not create a nextframe thread!\n", s);
-        }
-
-        pthread_attr_destroy(&attr);
-    }
 }
 
 //----------------------------------------------------------------
